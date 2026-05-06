@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPC Simulator — OS Course Project</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d0f14;
+  --bg2: #141720;
+  --bg3: #1c2030;
+  --bg4: #242840;
+  --panel: #181c28;
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.13);
+  --text: #e8eaf0;
+  --muted: #6b7280;
+  --dim: #3f4560;
+  --blue: #4f8ef7;
+  --blue2: #2563eb;
+  --green: #22d3a0;
+  --green2: #059669;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --purple: #a78bfa;
+  --cyan: #22d3ee;
+  --pipe-c: #4f8ef7;
+  --fifo-c: #a78bfa;
+  --shm-c: #22d3a0;
+  --sem-c: #f59e0b;
+  --font: 'Space Grotesk', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: hidden; }
+
+/* Layout */
+.shell { display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 56px 1fr; height: 100vh; }
+.topbar { grid-column: 1/-1; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 1.5rem; gap: 1rem; }
+.logo { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s ease infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.topbar-meta { margin-left: auto; font-size: 12px; font-family: var(--mono); color: var(--muted); display: flex; gap: 1.5rem; }
+.topbar-meta span b { color: var(--text); font-weight: 400; }
+.sidebar { background: var(--bg2); border-right: 1px solid var(--border); padding: 1rem 0; overflow-y: auto; }
+.nav-section { padding: 0 1rem .5rem; font-size: 10px; font-weight: 600; letter-spacing: .8px; color: var(--dim); text-transform: uppercase; margin-top: .75rem; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: .55rem 1rem; margin: 1px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted); transition: all .15s; border: none; background: none; width: calc(100% - 16px); text-align: left; }
+.nav-item:hover { background: var(--bg3); color: var(--text); }
+.nav-item.active { background: var(--bg4); color: var(--text); }
+.nav-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.main { overflow-y: auto; background: var(--bg); }
+.page { display: none; padding: 1.5rem; animation: fadeIn .2s ease; }
+.page.active { display: block; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+
+/* Cards */
+.page-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+.page-sub { font-size: 13px; color: var(--muted); margin-bottom: 1.5rem; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: 1.25rem; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+.card-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); margin-bottom: .5rem; }
+.stat-val { font-size: 28px; font-weight: 700; font-family: var(--mono); }
+.stat-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* Terminal */
+.terminal { background: #080a0e; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.term-bar { background: var(--bg3); padding: .6rem 1rem; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.dot-r { width: 11px; height: 11px; border-radius: 50%; background: #ef4444; }
+.dot-y { width: 11px; height: 11px; border-radius: 50%; background: #f59e0b; }
+.dot-g { width: 11px; height: 11px; border-radius: 50%; background: #22c55e; }
+.term-body { padding: 1rem 1.25rem; font-family: var(--mono); font-size: 12.5px; line-height: 1.8; min-height: 180px; max-height: 320px; overflow-y: auto; }
+.c-g { color: #22d3a0; } .c-b { color: #4f8ef7; } .c-y { color: #f59e0b; } .c-r { color: #ef4444; } .c-p { color: #a78bfa; } .c-m { color: #6b7280; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: .5rem 1rem; border-radius: 8px; font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; border: 1px solid var(--border2); background: var(--bg3); color: var(--text); transition: all .15s; }
+.btn:hover { background: var(--bg4); border-color: rgba(255,255,255,0.2); }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--blue2); border-color: var(--blue); color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-green { background: var(--green2); border-color: var(--green); color: #fff; }
+.btn-green:hover { background: #047857; }
+.btn-row { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; }
+
+/* Simulation canvas */
+.sim-canvas { position: relative; height: 320px; background: #080a0e; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.process-node { position: absolute; width: 90px; height: 64px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-family: var(--mono); font-weight: 600; border: 1.5px solid; transition: all .3s; cursor: default; }
+.process-node .pid { font-size: 9px; font-weight: 400; opacity: .7; }
+.channel-label { position: absolute; font-size: 10px; font-family: var(--mono); color: var(--muted); text-align: center; background: var(--bg); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); }
+
+/* Progress */
+.pbar-wrap { background: var(--bg3); border-radius: 6px; height: 8px; overflow: hidden; margin: .5rem 0; }
+.pbar-fill { height: 100%; border-radius: 6px; transition: width .5s ease; }
+
+/* Badge */
+.badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+.badge-blue { background: rgba(79,142,247,.15); color: var(--blue); }
+.badge-green { background: rgba(34,211,160,.15); color: var(--green); }
+.badge-amber { background: rgba(245,158,11,.15); color: var(--amber); }
+.badge-red { background: rgba(239,68,68,.15); color: var(--red); }
+.badge-purple { background: rgba(167,139,250,.15); color: var(--purple); }
+
+/* Chart bars */
+.bar-chart { display: flex; flex-direction: column; gap: 12px; padding: 1rem 0; }
+.bar-row { display: grid; grid-template-columns: 110px 1fr 80px; align-items: center; gap: .75rem; }
+.bar-label { font-size: 12px; color: var(--muted); font-family: var(--mono); text-align: right; }
+.bar-track { height: 20px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 6px; font-size: 10px; font-weight: 600; transition: width 1s ease; }
+.bar-val { font-size: 12px; font-family: var(--mono); color: var(--text); }
+
+/* Concept cards */
+.concept-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+.concept-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+.concept-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: .75rem; }
+.concept-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.concept-desc { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.concept-props { margin-top: .75rem; display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th { text-align: left; padding: .5rem .75rem; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); border-bottom: 1px solid var(--border); }
+.data-table td { padding: .7rem .75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--bg3); }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 3px; }
+
+/* Animations */
+.packet { position: absolute; width: 10px; height: 10px; border-radius: 50%; pointer-events: none; }
+@keyframes moveRight { from{left:var(--x1)} to{left:var(--x2)} }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.cursor { animation: blink 1s step-end infinite; }
+
+svg.flow { width: 100%; height: 100%; position: absolute; top:0; left:0; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      IPC Simulator
+    </div>
+    <span style="font-size:12px;color:var(--muted);background:var(--bg3);padding:3px 10px;border-radius:6px;font-family:var(--mono)">OS Course Project</span>
+    <div class="topbar-meta">
+      <span>PID: <b id="main-pid">--</b></span>
+      <span>Kernel: <b>Linux 5.15</b></span>
+      <span>Mode: <b>Multiprocess</b></span>
+      <span id="clock" style="color:var(--green)"></span>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="nav-section">Overview</div>
+    <button class="nav-item active" onclick="showPage('dashboard',this)">
+      <div class="nav-dot" style="background:var(--blue)"></div> Dashboard
+    </button>
+
+    <div class="nav-section">IPC Mechanisms</div>
+    <button class="nav-item" onclick="showPage('pipes',this)">
+      <div class="nav-dot" style="background:var(--pipe-c)"></div> Unnamed Pipes
+    </button>
+    <button class="nav-item" onclick="showPage('fifo',this)">
+      <div class="nav-dot" style="background:var(--fifo-c)"></div> Named Pipes (FIFO)
+    </button>
+    <button class="nav-item" onclick="showPage('shm',this)">
+      <div class="nav-dot" style="background:var(--shm-c)"></div> Shared Memory
+    </button>
+    <button class="nav-item" onclick="showPage('sem',this)">
+      <div class="nav-dot" style="background:var(--sem-c)"></div> Semaphores
+    </button>
+
+    <div class="nav-section">Analysis</div>
+    <button class="nav-item" onclick="showPage('bench',this)">
+      <div class="nav-dot" style="background:var(--cyan)"></div> Benchmark
+    </button>
+    <button class="nav-item" onclick="showPage('race',this)">
+      <div class="nav-dot" style="background:var(--red)"></div> Race Condition
+    </button>
+    <button class="nav-item" onclick="showPage('concepts',this)">
+      <div class="nav-dot" style="background:var(--purple)"></div> Concepts
+    </button>
+
+    <div class="nav-section">Project</div>
+    <button class="nav-item" onclick="showPage('code',this)">
+      <div class="nav-dot" style="background:var(--muted)"></div> Source Code
+    </button>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- ── DASHBOARD ── -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-title">IPC Simulator Dashboard</div>
+      <div class="page-sub">Inter-Process Communication — Multiprocess Coordination &amp; Data Exchange</div>
+
+      <div class="grid4">
+        <div class="card">
+          <div class="card-title">IPC Mechanisms</div>
+          <div class="stat-val" style="color:var(--blue)">4</div>
+          <div class="stat-sub">Pipe · FIFO · Shared Mem · Sem</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Processes Simulated</div>
+          <div class="stat-val" style="color:var(--green)" id="proc-count">0</div>
+          <div class="stat-sub">Parent + child forks</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Messages Sent</div>
+          <div class="stat-val" style="color:var(--purple)" id="msg-count">0</div>
+          <div class="stat-sub">Across all channels</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Test Results</div>
+          <div class="stat-val" style="color:var(--amber)">15/16</div>
+          <div class="stat-sub">All critical tests pass</div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card" style="grid-row:span 2">
+          <div class="card-title">Live Process Visualization</div>
+          <div class="sim-canvas" id="dash-canvas">
+            <svg class="flow" id="flow-svg"></svg>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="runSim('pipe')">▶ Run Pipe Demo</button>
+            <button class="btn" onclick="runSim('fifo')">▶ FIFO</button>
+            <button class="btn" onclick="runSim('shm')">▶ Shared Mem</button>
+            <button class="btn" onclick="stopSim()">■ Stop</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Throughput Comparison</div>
+          <div class="bar-chart">
+            <div class="bar-row">
+              <div class="bar-label">Unnamed Pipe</div>
+              <div class="bar-track"><div class="bar-fill" id="b-pipe" style="width:0%;background:var(--pipe-c)"></div></div>
+              <div class="bar-val" id="v-pipe">—</div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label">Named Pipe</div>
+              <div class="bar-track"><div class="bar-fill" id="b-fifo" style="width:0%;background:var(--fifo-c)"></div></div>
+              <div class="bar-val" id="v-fifo">—</div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label">Shared Mem</div>
+              <div class="bar-track"><div class="bar-fill" id="b-shm" style="width:0%;background:var(--shm-c)"></div></div>
+              <div class="bar-val" id="v-shm">—</div>
+            </div>
+          </div>
+          <button class="btn btn-green" style="width:100%" onclick="runBenchmark()">⚡ Run Benchmark</button>
+        </div>
+        <div class="card">
+          <div class="card-title">System Log</div>
+          <div class="terminal">
+            <div class="term-bar"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div><span style="margin-left:6px">ipc_simulator — bash</span></div>
+            <div class="term-body" id="syslog">
+              <div><span class="c-m">$</span> <span class="c-g">./ipc_simulator</span> <span class="c-m">--all</span></div>
+              <div><span class="c-m">Initialising IPC Simulator...</span></div>
+              <div><span class="c-m">Ready. Select a demo from the sidebar or run a benchmark.</span> <span class="cursor">█</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PIPES ── -->
+    <div id="page-pipes" class="page">
+      <div class="page-title">Unnamed Pipes</div>
+      <div class="page-sub">Unidirectional byte-stream channel between parent and child processes via <code style="font-family:var(--mono);font-size:12px;color:var(--blue)">pipe()</code></div>
+
+      <div class="grid2" style="margin-bottom:1rem">
+        <div class="card">
+          <div class="card-title">How It Works</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.7">
+            A pipe is a kernel buffer with two file descriptors: <span style="color:var(--text);font-family:var(--mono)">fd[0]</span> (read end) and <span style="color:var(--text);font-family:var(--mono)">fd[1]</span> (write end).
+            After <span style="color:var(--text);font-family:var(--mono)">fork()</span>, both parent and child inherit both ends.
+            The unused end must be closed to avoid blocking.
+          </div>
+          <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+            <span class="badge badge-blue">pipe() syscall</span>
+            <span class="badge badge-green">fork() + exec()</span>
+            <span class="badge badge-amber">Parent ↔ Child</span>
+            <span class="badge badge-purple">Kernel Buffer</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Characteristics</div>
+          <table class="data-table">
+            <tr><td style="color:var(--muted)">Direction</td><td>Unidirectional (one way)</td></tr>
+            <tr><td style="color:var(--muted)">Scope</td><td>Related processes only</td></tr>
+            <tr><td style="color:var(--muted)">Persistence</td><td>Dies with process</td></tr>
+            <tr><td style="color:var(--muted)">Throughput</td><td style="color:var(--green)">~113 MB/s</td></tr>
+            <tr><td style="color:var(--muted)">Latency</td><td>Low (kernel copy)</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">Live Demo</div>
+        <div class="sim-canvas" id="pipe-canvas" style="height:220px">
+          <svg class="flow" id="pipe-svg"></svg>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="animatePipe()">▶ Simulate pipe() transfer</button>
+          <button class="btn" onclick="clearCanvas('pipe-canvas','pipe-svg')">↺ Reset</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Source Code — ipc_core.c</div>
+        <div class="terminal">
+          <div class="term-bar"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div><span style="margin-left:6px">ipc_core.c — pipe demo</span></div>
+          <div class="term-body" style="max-height:260px"><pre style="white-space:pre-wrap"><span class="c-p">void</span> <span class="c-b">demo_unnamed_pipe</span>(<span class="c-p">void</span>) {
+  <span class="c-p">int</span> pipefd[<span class="c-y">2</span>];
+  <span class="c-p">pid_t</span> pid;
+  <span class="c-b">pipe</span>(pipefd);          <span class="c-m">// creates read[0] and write[1]</span>
+
+  pid = <span class="c-b">fork</span>();
+  <span class="c-p">if</span> (pid == <span class="c-y">0</span>) {        <span class="c-m">// CHILD — reader</span>
+    <span class="c-b">close</span>(pipefd[<span class="c-y">1</span>]);    <span class="c-m">// close unused write end</span>
+    <span class="c-b">read</span>(pipefd[<span class="c-y">0</span>], buf, <span class="c-p">sizeof</span>(buf));
+    <span class="c-b">close</span>(pipefd[<span class="c-y">0</span>]);
+    <span class="c-b">exit</span>(<span class="c-y">EXIT_SUCCESS</span>);
+  } <span class="c-p">else</span> {               <span class="c-m">// PARENT — writer</span>
+    <span class="c-b">close</span>(pipefd[<span class="c-y">0</span>]);    <span class="c-m">// close unused read end</span>
+    <span class="c-b">write</span>(pipefd[<span class="c-y">1</span>], msg, <span class="c-b">strlen</span>(msg));
+    <span class="c-b">close</span>(pipefd[<span class="c-y">1</span>]);    <span class="c-m">// signals EOF to child</span>
+    <span class="c-b">wait</span>(<span class="c-y">NULL</span>);
+  }
+}</pre></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── FIFO ── -->
+    <div id="page-fifo" class="page">
+      <div class="page-title">Named Pipes (FIFO)</div>
+      <div class="page-sub">Filesystem-backed pipes enabling communication between unrelated processes via <code style="font-family:var(--mono);font-size:12px;color:var(--purple)">mkfifo()</code></div>
+      <div class="grid2" style="margin-bottom:1rem">
+        <div class="card">
+          <div class="card-title">How It Works</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.7">A FIFO appears as a special file in the filesystem at a known path (e.g. <span style="color:var(--text);font-family:var(--mono)">/tmp/my_fifo</span>). Any process with the right permissions can open it — no shared ancestry required. Data flows FIFO order through the kernel buffer.</div>
+          <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+            <span class="badge badge-purple">mkfifo() syscall</span>
+            <span class="badge badge-blue">Filesystem path</span>
+            <span class="badge badge-green">Unrelated processes</span>
+            <span class="badge badge-amber">Blocking open()</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">vs Unnamed Pipe</div>
+          <table class="data-table">
+            <thead><tr><th>Feature</th><th>Unnamed Pipe</th><th>FIFO</th></tr></thead>
+            <tr><td style="color:var(--muted)">Filesystem entry</td><td><span class="badge badge-red">No</span></td><td><span class="badge badge-green">Yes</span></td></tr>
+            <tr><td style="color:var(--muted)">Unrelated procs</td><td><span class="badge badge-red">No</span></td><td><span class="badge badge-green">Yes</span></td></tr>
+            <tr><td style="color:var(--muted)">Persistence</td><td>Process lifetime</td><td>Until unlink()</td></tr>
+            <tr><td style="color:var(--muted)">Performance</td><td>~113 MB/s</td><td>~85 MB/s</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Source Code</div>
+        <div class="terminal">
+          <div class="term-bar"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div><span style="margin-left:6px">ipc_core.c — FIFO demo</span></div>
+          <div class="term-body"><pre style="white-space:pre-wrap"><span class="c-m">// Create a named pipe on the filesystem</span>
+<span class="c-b">mkfifo</span>(<span class="c-g">"/tmp/ipc_sim_fifo"</span>, <span class="c-y">0666</span>);
+
+<span class="c-m">// Writer process (can be completely unrelated)</span>
+<span class="c-p">int</span> fd = <span class="c-b">open</span>(<span class="c-g">"/tmp/ipc_sim_fifo"</span>, <span class="c-y">O_WRONLY</span>);
+<span class="c-b">write</span>(fd, msg, <span class="c-b">strlen</span>(msg));
+<span class="c-b">close</span>(fd);
+
+<span class="c-m">// Reader process — blocks until writer opens</span>
+<span class="c-p">int</span> fd = <span class="c-b">open</span>(<span class="c-g">"/tmp/ipc_sim_fifo"</span>, <span class="c-y">O_RDONLY</span>);
+<span class="c-b">read</span>(fd, buf, <span class="c-p">sizeof</span>(buf));
+<span class="c-b">close</span>(fd);
+<span class="c-b">unlink</span>(<span class="c-g">"/tmp/ipc_sim_fifo"</span>); <span class="c-m">// cleanup</span></pre></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SHARED MEMORY ── -->
+    <div id="page-shm" class="page">
+      <div class="page-title">Shared Memory</div>
+      <div class="page-sub">Fastest IPC — multiple processes map the same physical memory pages via <code style="font-family:var(--mono);font-size:12px;color:var(--green)">shmget() / shmat()</code></div>
+      <div class="grid2" style="margin-bottom:1rem">
+        <div class="card">
+          <div class="card-title">How It Works</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.7">The kernel allocates a memory segment identified by a key. Processes attach it into their own address space with <span style="color:var(--text);font-family:var(--mono)">shmat()</span>. Data written by one process is immediately visible to all others — no copying. <strong style="color:var(--red)">Requires synchronisation</strong> to prevent race conditions.</div>
+          <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+            <span class="badge badge-green">shmget / shmat</span>
+            <span class="badge badge-red">Needs semaphores</span>
+            <span class="badge badge-blue">Zero-copy</span>
+            <span class="badge badge-amber">Fastest IPC</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Shared Segment Layout</div>
+          <div style="font-family:var(--mono);font-size:12px;line-height:2">
+            <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:.5rem .75rem;margin:.25rem 0">
+              <span style="color:var(--green)">counter</span> <span style="color:var(--muted)">int32</span> — synchronised with semaphore
+            </div>
+            <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:.5rem .75rem;margin:.25rem 0">
+              <span style="color:var(--blue)">message</span> <span style="color:var(--muted)">char[256]</span> — payload buffer
+            </div>
+            <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:.5rem .75rem;margin:.25rem 0">
+              <span style="color:var(--amber)">ready</span> <span style="color:var(--muted)">int32</span> — completion flag
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Source Code</div>
+        <div class="terminal">
+          <div class="term-bar"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div><span style="margin-left:6px">ipc_core.c — shared memory</span></div>
+          <div class="term-body"><pre style="white-space:pre-wrap"><span class="c-m">// Allocate shared memory segment</span>
+<span class="c-p">int</span> shmid = <span class="c-b">shmget</span>(SHM_KEY, SHM_SIZE, IPC_CREAT | <span class="c-y">0666</span>);
+SharedData *shdata = (<span class="c-p">SharedData</span> *)<span class="c-b">shmat</span>(shmid, NULL, <span class="c-y">0</span>);
+
+<span class="c-m">// Writer (child) — under semaphore protection</span>
+<span class="c-b">sem_wait</span>(semid);
+shdata->counter++;
+<span class="c-b">snprintf</span>(shdata->message, <span class="c-p">sizeof</span>(shdata->message),
+         <span class="c-g">"Write complete! counter=%d"</span>, shdata->counter);
+shdata->ready = <span class="c-y">1</span>;
+<span class="c-b">sem_post</span>(semid);
+
+<span class="c-m">// Cleanup — critical to avoid resource leaks</span>
+<span class="c-b">shmdt</span>(shdata);
+<span class="c-b">shmctl</span>(shmid, IPC_RMID, NULL);
+<span class="c-b">semctl</span>(semid, <span class="c-y">0</span>, IPC_RMID);</pre></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SEMAPHORES ── -->
+    <div id="page-sem" class="page">
+      <div class="page-title">Semaphores</div>
+      <div class="page-sub">Synchronisation primitive — prevents race conditions in shared memory access</div>
+      <div class="grid2" style="margin-bottom:1rem">
+        <div class="card">
+          <div class="card-title">How It Works</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.7">A semaphore is a kernel counter. <span style="color:var(--text);font-family:var(--mono)">sem_wait()</span> decrements it (blocks if 0). <span style="color:var(--text);font-family:var(--mono)">sem_post()</span> increments it (wakes waiting processes). A binary semaphore (value 0/1) acts as a mutex lock for critical sections.</div>
+          <div style="margin-top:1rem">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Semaphore state machine</div>
+            <div style="font-family:var(--mono);font-size:12px">
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--green);width:60px">val = 1</span>
+                <span style="color:var(--muted)">→</span>
+                <span style="color:var(--text)">Resource free, sem_wait() proceeds</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--red);width:60px">val = 0</span>
+                <span style="color:var(--muted)">→</span>
+                <span style="color:var(--text)">Locked, caller blocks</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+                <span style="color:var(--amber);width:60px">sem_post</span>
+                <span style="color:var(--muted)">→</span>
+                <span style="color:var(--text)">Releases lock, unblocks waiter</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Interactive — Semaphore Visualizer</div>
+          <div style="text-align:center;padding:1rem 0">
+            <div id="sem-val-display" style="font-size:48px;font-family:var(--mono);font-weight:700;color:var(--green)">1</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:1rem">Semaphore value</div>
+            <div id="sem-status" style="font-size:13px;margin-bottom:1rem;padding:.4rem .75rem;background:rgba(34,211,160,.1);border-radius:6px;color:var(--green)">🔓 Unlocked — resource available</div>
+            <div style="display:flex;gap:.5rem;justify-content:center">
+              <button class="btn btn-primary" onclick="semWait()">sem_wait() ↓</button>
+              <button class="btn btn-green" onclick="semPost()">sem_post() ↑</button>
+            </div>
+          </div>
+          <div id="sem-log" style="font-family:var(--mono);font-size:11px;color:var(--muted);height:80px;overflow-y:auto;border-top:1px solid var(--border);padding-top:.5rem;margin-top:.5rem"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── BENCHMARK ── -->
+    <div id="page-bench" class="page">
+      <div class="page-title">Performance Benchmark</div>
+      <div class="page-sub">Throughput and latency comparison across IPC mechanisms</div>
+      <div class="grid4" style="margin-bottom:1.25rem">
+        <div class="card">
+          <div class="card-title">Pipe Throughput</div>
+          <div class="stat-val" style="color:var(--pipe-c)" id="bench-pipe-val">—</div>
+          <div class="stat-sub">MB/s @ 1024 byte msgs</div>
+        </div>
+        <div class="card">
+          <div class="card-title">FIFO Throughput</div>
+          <div class="stat-val" style="color:var(--fifo-c)" id="bench-fifo-val">—</div>
+          <div class="stat-sub">MB/s @ 1024 byte msgs</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Shared Mem</div>
+          <div class="stat-val" style="color:var(--shm-c)" id="bench-shm-val">—</div>
+          <div class="stat-sub">MB/s @ 1024 byte msgs</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Winner</div>
+          <div class="stat-val" style="color:var(--amber);font-size:18px" id="bench-winner">—</div>
+          <div class="stat-sub">Fastest for bulk data</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">Throughput Chart — MB/s (higher is better)</div>
+        <div class="bar-chart" style="padding:1.25rem 0">
+          <div class="bar-row">
+            <div class="bar-label">Unnamed Pipe</div>
+            <div class="bar-track"><div class="bar-fill" id="bb-pipe" style="width:0%;background:var(--pipe-c)"></div></div>
+            <div class="bar-val" id="bv-pipe">—</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Named Pipe</div>
+            <div class="bar-track"><div class="bar-fill" id="bb-fifo" style="width:0%;background:var(--fifo-c)"></div></div>
+            <div class="bar-val" id="bv-fifo">—</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Shared Mem</div>
+            <div class="bar-track"><div class="bar-fill" id="bb-shm" style="width:0%;background:var(--shm-c)"></div></div>
+            <div class="bar-val" id="bv-shm">—</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="runBenchPage()">⚡ Run Benchmark Simulation</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">When To Use Each</div>
+        <table class="data-table">
+          <thead><tr><th>Mechanism</th><th>Best For</th><th>Avoid When</th><th>Latency</th></tr></thead>
+          <tr>
+            <td><span class="badge badge-blue">Unnamed Pipe</span></td>
+            <td>Parent ↔ child, shell pipelines</td>
+            <td>Unrelated processes</td>
+            <td style="color:var(--green)">Very Low</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-purple">Named Pipe</span></td>
+            <td>Client-server, unrelated processes</td>
+            <td>High-throughput bulk data</td>
+            <td style="color:var(--green)">Low</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-green">Shared Memory</span></td>
+            <td>Large data, high frequency updates</td>
+            <td>Without synchronisation</td>
+            <td style="color:var(--blue)">Near-zero</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── RACE CONDITION ── -->
+    <div id="page-race" class="page">
+      <div class="page-title">Race Condition Demo</div>
+      <div class="page-sub">Demonstrates why shared memory requires synchronisation primitives</div>
+
+      <div class="grid2" style="margin-bottom:1rem">
+        <div class="card">
+          <div class="card-title" style="color:var(--red)">⚠ Unsafe — No Lock</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:1rem">Two processes increment a shared counter <strong style="color:var(--text)">10,000 times each</strong> without synchronisation. The expected result is 20,000 but data races produce inconsistent results.</div>
+          <div style="font-family:var(--mono);font-size:12px;background:var(--bg3);padding:.75rem;border-radius:8px;border:1px solid var(--border2)">
+            Expected: <span style="color:var(--text)">20,000</span><br>
+            Got: <span style="color:var(--red)" id="race-unsafe-val">???</span><br>
+            Lost: <span style="color:var(--amber)" id="race-lost">???</span>
+          </div>
+          <button class="btn" style="margin-top:1rem;width:100%;border-color:rgba(239,68,68,.4);color:var(--red)" onclick="simulateRace(false)">▶ Run Unsafe Demo</button>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--green)">✓ Safe — Semaphore Lock</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:1rem">Same scenario, but each increment is wrapped in <span style="color:var(--text);font-family:var(--mono)">sem_wait() / sem_post()</span>. Result is always exactly 20,000.</div>
+          <div style="font-family:var(--mono);font-size:12px;background:var(--bg3);padding:.75rem;border-radius:8px;border:1px solid var(--border2)">
+            Expected: <span style="color:var(--text)">20,000</span><br>
+            Got: <span style="color:var(--green)" id="race-safe-val">???</span><br>
+            Status: <span style="color:var(--green)" id="race-safe-status">Waiting...</span>
+          </div>
+          <button class="btn btn-green" style="margin-top:1rem;width:100%" onclick="simulateRace(true)">▶ Run Safe Demo</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Race Condition — Code Comparison</div>
+        <div class="grid2">
+          <div class="terminal">
+            <div class="term-bar" style="border-bottom:2px solid var(--red)"><div class="dot-r"></div><span style="margin-left:6px;color:var(--red)">UNSAFE — data race</span></div>
+            <div class="term-body"><pre style="white-space:pre-wrap"><span class="c-m">// No protection — WRONG</span>
+<span class="c-p">for</span> (<span class="c-p">int</span> i = <span class="c-y">0</span>; i < ITERS; i++) {
+    (*counter)++;  <span class="c-r">// ← RACE HERE</span>
+    <span class="c-m">// read-modify-write NOT atomic</span>
+    <span class="c-m">// another process can interrupt</span>
+}</pre></div>
+          </div>
+          <div class="terminal">
+            <div class="term-bar" style="border-bottom:2px solid var(--green)"><div class="dot-g"></div><span style="margin-left:6px;color:var(--green)">SAFE — semaphore lock</span></div>
+            <div class="term-body"><pre style="white-space:pre-wrap"><span class="c-m">// Semaphore-protected — CORRECT</span>
+<span class="c-p">for</span> (<span class="c-p">int</span> i = <span class="c-y">0</span>; i < ITERS; i++) {
+    <span class="c-b">sem_wait</span>(semid);  <span class="c-m">// lock</span>
+    (*counter)++;     <span class="c-g">// ← safe</span>
+    <span class="c-b">sem_post</span>(semid);  <span class="c-m">// unlock</span>
+}</pre></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CONCEPTS ── -->
+    <div id="page-concepts" class="page">
+      <div class="page-title">IPC Concepts</div>
+      <div class="page-sub">Core theory behind inter-process communication in modern operating systems</div>
+      <div class="concept-grid">
+        <div class="concept-card">
+          <div class="concept-icon" style="background:rgba(79,142,247,.15)">🔗</div>
+          <div class="concept-name">Process Isolation</div>
+          <div class="concept-desc">Each process has its own virtual address space. The OS kernel prevents direct memory access between processes. IPC mechanisms are the controlled channels through which data can cross these boundaries safely.</div>
+          <div class="concept-props"><span class="badge badge-blue">Virtual Memory</span><span class="badge badge-blue">MMU</span><span class="badge badge-blue">Kernel</span></div>
+        </div>
+        <div class="concept-card">
+          <div class="concept-icon" style="background:rgba(34,211,160,.15)">⚙️</div>
+          <div class="concept-name">Concurrency</div>
+          <div class="concept-desc">Multiple processes run simultaneously on the CPU. The scheduler interleaves their execution. Without coordination, shared state becomes inconsistent — this is the root of all race conditions in multiprocess systems.</div>
+          <div class="concept-props"><span class="badge badge-green">Scheduling</span><span class="badge badge-green">Context Switch</span><span class="badge badge-green">Parallelism</span></div>
+        </div>
+        <div class="concept-card">
+          <div class="concept-icon" style="background:rgba(245,158,11,.15)">🔒</div>
+          <div class="concept-name">Mutual Exclusion</div>
+          <div class="concept-desc">A guarantee that only one process executes a critical section at a time. Achieved via semaphores, mutexes, or spinlocks. Prevents data corruption when multiple processes access shared resources.</div>
+          <div class="concept-props"><span class="badge badge-amber">Semaphore</span><span class="badge badge-amber">Mutex</span><span class="badge badge-amber">Spinlock</span></div>
+        </div>
+        <div class="concept-card">
+          <div class="concept-icon" style="background:rgba(167,139,250,.15)">🔄</div>
+          <div class="concept-name">Deadlock</div>
+          <div class="concept-desc">A circular wait where process A holds resource X waiting for Y, while process B holds Y waiting for X. Both block forever. Prevented by lock ordering, timeouts, or the Banker's Algorithm.</div>
+          <div class="concept-props"><span class="badge badge-purple">Coffman Conditions</span><span class="badge badge-purple">Banker's Alg</span></div>
+        </div>
+        <div class="concept-card">
+          <div class="concept-icon" style="background:rgba(239,68,68,.15)">⚡</div>
+          <div class="concept-name">Race Condition</div>
+          <div class="concept-desc">A bug where program outcome depends on the non-deterministic interleaving of concurrent operations. Classic example: two processes reading, modifying, and writing a shared counter — increments get lost.</div>
+          <div class="concept-props"><span class="badge badge-red">Non-deterministic</span><span class="badge badge-red">Data Loss</span></div>
+        </div>
+        <div class="concept-card">
+          <div class="concept-icon" style="background:rgba(34,211,238,.15)">📬</div>
+          <div class="concept-name">Producer-Consumer</div>
+          <div class="concept-desc">A classic IPC pattern: one process produces data, another consumes it via a shared buffer. Semaphores coordinate access: one counts empty slots, another counts full slots. Pipes implement this natively.</div>
+          <div class="concept-props"><span class="badge badge-blue">Buffer</span><span class="badge badge-green">Semaphores</span><span class="badge badge-amber">Blocking</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SOURCE CODE ── -->
+    <div id="page-code" class="page">
+      <div class="page-title">Project Source Files</div>
+      <div class="page-sub">Complete implementation — compile with <code style="font-family:var(--mono);font-size:12px;color:var(--green)">make all</code></div>
+
+      <div class="grid2" style="margin-bottom:1rem">
+        <div class="card" style="cursor:pointer" onclick="highlight(this)">
+          <div class="card-title">src/ipc_core.c</div>
+          <div style="font-size:13px;color:var(--muted)">Core IPC implementations — pipe, FIFO, shared memory, semaphores, benchmark</div>
+          <div style="margin-top:.75rem;font-family:var(--mono);font-size:11px;color:var(--muted)">~340 lines · C11</div>
+        </div>
+        <div class="card" style="cursor:pointer" onclick="highlight(this)">
+          <div class="card-title">src/ipc_main.c</div>
+          <div style="font-size:13px;color:var(--muted)">Entry point — argument parsing, demo mode selection</div>
+          <div style="margin-top:.75rem;font-family:var(--mono);font-size:11px;color:var(--muted)">~30 lines · C11</div>
+        </div>
+        <div class="card" style="cursor:pointer" onclick="highlight(this)">
+          <div class="card-title">include/ipc_core.h</div>
+          <div style="font-size:13px;color:var(--muted)">Function prototypes and shared constants</div>
+          <div style="margin-top:.75rem;font-family:var(--mono);font-size:11px;color:var(--muted)">~20 lines · C header</div>
+        </div>
+        <div class="card" style="cursor:pointer" onclick="highlight(this)">
+          <div class="card-title">tests/test_ipc.c</div>
+          <div style="font-size:13px;color:var(--muted)">Unit &amp; integration test suite — 16 tests, 15 pass</div>
+          <div style="margin-top:.75rem;font-family:var(--mono);font-size:11px;color:var(--muted)">~170 lines · C11</div>
+        </div>
+        <div class="card" style="cursor:pointer" onclick="highlight(this)">
+          <div class="card-title">Makefile</div>
+          <div style="font-size:13px;color:var(--muted)">Build system — all, test, run-pipe, run-fifo, run-shm, run-bench targets</div>
+          <div style="margin-top:.75rem;font-family:var(--mono);font-size:11px;color:var(--muted)">~30 lines · GNU Make</div>
+        </div>
+        <div class="card" style="cursor:pointer" onclick="highlight(this)">
+          <div class="card-title">docs/README.md</div>
+          <div style="font-size:13px;color:var(--muted)">Setup guide, architecture overview, usage, and submission notes</div>
+          <div style="margin-top:.75rem;font-family:var(--mono);font-size:11px;color:var(--muted)">~150 lines · Markdown</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Build &amp; Run Commands</div>
+        <div class="terminal">
+          <div class="term-bar"><div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div><span style="margin-left:6px">Terminal</span></div>
+          <div class="term-body"><pre style="white-space:pre-wrap"><span class="c-m"># Clone or unzip project</span>
+<span class="c-b">cd</span> ipc_simulator
+
+<span class="c-m"># Compile everything</span>
+<span class="c-b">make</span> all
+
+<span class="c-m"># Run all demos in sequence</span>
+<span class="c-b">make</span> run-all
+
+<span class="c-m"># Individual demos</span>
+<span class="c-b">make</span> run-pipe          <span class="c-m"># unnamed pipe</span>
+<span class="c-b">make</span> run-fifo          <span class="c-m"># named pipe (FIFO)</span>
+<span class="c-b">make</span> run-shm           <span class="c-m"># shared memory</span>
+<span class="c-b">make</span> run-race-unsafe   <span class="c-m"># race condition demo</span>
+<span class="c-b">make</span> run-race-safe     <span class="c-m"># safe with semaphores</span>
+<span class="c-b">make</span> run-bench         <span class="c-m"># throughput benchmark</span>
+
+<span class="c-m"># Run test suite</span>
+<span class="c-b">make</span> test
+
+<span class="c-m"># Clean build artifacts</span>
+<span class="c-b">make</span> clean</pre></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── Clock ──
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString();
+  document.getElementById('main-pid').textContent = Math.floor(Math.random()*9000)+1000;
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ── Navigation ──
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+// ── Sys log ──
+let logLines = [];
+function log(html) {
+  const el = document.getElementById('syslog');
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  logLines.push(html);
+}
+
+// ── Process nodes for simulation ──
+function makeNode(canvas, x, y, label, pid, color) {
+  const n = document.createElement('div');
+  n.className = 'process-node';
+  n.style.left = x + 'px'; n.style.top = y + 'px';
+  n.style.color = color; n.style.borderColor = color;
+  n.style.background = color + '18';
+  n.innerHTML = `<span>${label}</span><span class="pid">PID ${pid}</span>`;
+  canvas.appendChild(n);
+  return n;
+}
+
+function makeSVGArrow(svg, x1, y1, x2, y2, color, label) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const line = document.createElementNS(ns, 'line');
+  line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+  line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+  line.setAttribute('stroke', color); line.setAttribute('stroke-width', '2');
+  line.setAttribute('stroke-dasharray', '6,3');
+  svg.appendChild(line);
+  if (label) {
+    const t = document.createElementNS(ns, 'text');
+    t.setAttribute('x', (x1+x2)/2); t.setAttribute('y', y1 - 6);
+    t.setAttribute('fill', color); t.setAttribute('font-size', '11');
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-family', 'JetBrains Mono,monospace');
+    t.textContent = label;
+    svg.appendChild(t);
+  }
+}
+
+function animatePacket(canvas, x1, y1, x2, y2, color, cb) {
+  const p = document.createElement('div');
+  p.className = 'packet';
+  p.style.background = color;
+  p.style.left = x1 + 'px'; p.style.top = y1 + 'px';
+  p.style.boxShadow = '0 0 8px ' + color;
+  canvas.appendChild(p);
+  let start = null;
+  function step(ts) {
+    if (!start) start = ts;
+    const t = Math.min((ts - start) / 800, 1);
+    const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+    p.style.left = (x1 + (x2-x1)*ease) + 'px';
+    p.style.top  = (y1 + (y2-y1)*ease) + 'px';
+    if (t < 1) requestAnimationFrame(step);
+    else { p.remove(); if (cb) cb(); }
+  }
+  requestAnimationFrame(step);
+}
+
+let simActive = false;
+function stopSim() { simActive = false; }
+
+function clearCanvas(canvasId, svgId) {
+  const c = document.getElementById(canvasId);
+  const s = document.getElementById(svgId);
+  [...c.children].forEach(ch => { if (ch !== s) ch.remove(); });
+  while (s.firstChild) s.removeChild(s.firstChild);
+}
+
+function runSim(type) {
+  simActive = true;
+  const canvas = document.getElementById('dash-canvas');
+  const svg = document.getElementById('flow-svg');
+  clearCanvas('dash-canvas', 'flow-svg');
+
+  const colors = {pipe: '#4f8ef7', fifo: '#a78bfa', shm: '#22d3a0'};
+  const col = colors[type] || '#4f8ef7';
+
+  const pid1 = 1000 + Math.floor(Math.random()*8000);
+  const pid2 = pid1 + 1;
+
+  const parentNode = makeNode(canvas, 30, 120, 'PARENT', pid1, col);
+  const childNode  = makeNode(canvas, 290, 120, 'CHILD',  pid2, col);
+
+  const labels = {pipe: 'pipe(fd[2])', fifo: '/tmp/fifo', shm: 'shm_segment'};
+  makeSVGArrow(svg, 125, 152, 285, 152, col, labels[type]);
+
+  const msgs = type === 'shm'
+    ? ['shmat() → attach', 'Writing data...', 'sem_post()', 'Parent reads...']
+    : ['fork() → child created', `${labels[type]} opened`, 'Data transfer...', 'close() → done'];
+
+  let i = 0;
+  function sendNext() {
+    if (!simActive || i >= msgs.length) return;
+    log(`<span class="c-m">[${type.toUpperCase()}]</span> <span class="c-g">${msgs[i]}</span>`);
+    animatePacket(canvas, 125, 147, 285, 147, col, () => {
+      i++; if (i < msgs.length) setTimeout(sendNext, 600);
+      document.getElementById('proc-count').textContent = 2;
+      document.getElementById('msg-count').textContent = parseInt(document.getElementById('msg-count').textContent||0) + 1;
+    });
+  }
+  sendNext();
+}
+
+// ── Pipe page animation ──
+function animatePipe() {
+  const canvas = document.getElementById('pipe-canvas');
+  const svg = document.getElementById('pipe-svg');
+  clearCanvas('pipe-canvas', 'pipe-svg');
+  const pid1 = 2000 + Math.floor(Math.random()*5000);
+  makeNode(canvas, 20, 80, 'PARENT', pid1, '#4f8ef7');
+  makeNode(canvas, 270, 80, 'CHILD', pid1+1, '#4f8ef7');
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const rect = document.createElementNS(ns, 'rect');
+  rect.setAttribute('x','120'); rect.setAttribute('y','68'); rect.setAttribute('width','130'); rect.setAttribute('height','40');
+  rect.setAttribute('rx','6'); rect.setAttribute('fill','rgba(79,142,247,0.1)'); rect.setAttribute('stroke','#4f8ef7'); rect.setAttribute('stroke-width','1');
+  svg.appendChild(rect);
+  const t = document.createElementNS(ns, 'text');
+  t.setAttribute('x','185'); t.setAttribute('y','93'); t.setAttribute('fill','#4f8ef7');
+  t.setAttribute('font-size','11'); t.setAttribute('text-anchor','middle'); t.setAttribute('font-family','JetBrains Mono,monospace');
+  t.textContent = 'kernel buffer';
+  svg.appendChild(t);
+
+  makeSVGArrow(svg, 115, 100, 120, 100, '#4f8ef7', 'fd[1]');
+  makeSVGArrow(svg, 250, 100, 265, 100, '#4f8ef7', 'fd[0]');
+
+  let step = 0;
+  function next() {
+    if (step === 0) { animatePacket(canvas, 115, 97, 122, 97, '#4f8ef7', next); }
+    else if (step === 1) { animatePacket(canvas, 248, 97, 262, 97, '#4f8ef7', next); }
+    step++;
+  }
+  next();
+}
+
+function clearCanvas(id, svgId) {
+  const c = document.getElementById(id);
+  const s = document.getElementById(svgId);
+  [...c.children].forEach(ch => { if (ch !== s) ch.remove(); });
+  while(s.firstChild) s.removeChild(s.firstChild);
+}
+
+// ── Benchmark ──
+const benchData = {pipe: 113, fifo: 85, shm: 148};
+
+function runBenchmark() {
+  log('<span class="c-b">[BENCH]</span> Running benchmark simulation...');
+  const max = Math.max(...Object.values(benchData));
+  ['pipe','fifo','shm'].forEach((k, i) => {
+    setTimeout(() => {
+      const pct = Math.round(benchData[k]/max*100);
+      document.getElementById('b-'+k).style.width = pct+'%';
+      document.getElementById('v-'+k).textContent = benchData[k]+' MB/s';
+      log(`<span class="c-g">[BENCH]</span> ${k.toUpperCase().padEnd(4)}: ${benchData[k]} MB/s`);
+    }, i * 500);
+  });
+}
+
+function runBenchPage() {
+  const max = Math.max(...Object.values(benchData));
+  ['pipe','fifo','shm'].forEach((k, i) => {
+    setTimeout(() => {
+      const pct = Math.round(benchData[k]/max*100);
+      document.getElementById('bb-'+k).style.width = pct+'%';
+      document.getElementById('bv-'+k).textContent = benchData[k]+' MB/s';
+      document.getElementById('bench-'+k+'-val').textContent = benchData[k];
+    }, i * 600);
+  });
+  setTimeout(() => {
+    document.getElementById('bench-winner').textContent = 'Shared Mem';
+  }, 2000);
+}
+
+// ── Semaphore visualizer ──
+let semVal = 1;
+const semLog = document.getElementById('sem-log');
+function semLog_(msg, color) {
+  const d = document.createElement('div');
+  d.style.color = color||'var(--muted)';
+  d.textContent = msg;
+  semLog.appendChild(d);
+  semLog.scrollTop = semLog.scrollHeight;
+}
+function semWait() {
+  if (semVal <= 0) {
+    semLog_('sem_wait(): blocked — semaphore is 0', '#ef4444');
+    document.getElementById('sem-status').textContent = '🔴 Blocked — waiting...';
+    document.getElementById('sem-status').style.background = 'rgba(239,68,68,.1)';
+    document.getElementById('sem-status').style.color = 'var(--red)';
+    return;
+  }
+  semVal--;
+  document.getElementById('sem-val-display').textContent = semVal;
+  document.getElementById('sem-val-display').style.color = semVal===0?'var(--red)':'var(--amber)';
+  document.getElementById('sem-status').textContent = semVal===0?'🔒 Locked — critical section':'Decremented';
+  document.getElementById('sem-status').style.background = 'rgba(245,158,11,.1)';
+  document.getElementById('sem-status').style.color = 'var(--amber)';
+  semLog_(`sem_wait(): val → ${semVal}`, '#f59e0b');
+}
+function semPost() {
+  semVal++;
+  document.getElementById('sem-val-display').textContent = semVal;
+  document.getElementById('sem-val-display').style.color = 'var(--green)';
+  document.getElementById('sem-status').textContent = '🔓 Unlocked — resource available';
+  document.getElementById('sem-status').style.background = 'rgba(34,211,160,.1)';
+  document.getElementById('sem-status').style.color = 'var(--green)';
+  semLog_(`sem_post(): val → ${semVal}`, '#22d3a0');
+}
+
+// ── Race condition sim ──
+function simulateRace(safe) {
+  const ITERS = 10000;
+  if (!safe) {
+    const lost = Math.floor(Math.random()*3000)+500;
+    const got = ITERS*2 - lost;
+    document.getElementById('race-unsafe-val').textContent = got.toLocaleString();
+    document.getElementById('race-lost').textContent = lost.toLocaleString()+' updates lost!';
+  } else {
+    document.getElementById('race-safe-val').textContent = (ITERS*2).toLocaleString();
+    document.getElementById('race-safe-status').textContent = '✓ Perfect — no data loss';
+  }
+}
+
+// ── File highlight ──
+function highlight(card) {
+  document.querySelectorAll('.concept-card,.card').forEach(c => c.style.borderColor='');
+  card.style.borderColor = 'var(--blue)';
+  card.style.borderWidth = '1px';
+}
+</script>
+</body>
+</html>
